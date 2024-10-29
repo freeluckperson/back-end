@@ -48,8 +48,10 @@ const User = mongoose.model("User", userSchema);
 const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
-  recipients: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Cambiado a array de destinatarios
+  isRead: { type: Boolean, default: false }, // Nueva propiedad
+  recipients: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 });
+
 const Notification = mongoose.model("Notification", notificationSchema);
 
 // Define validation schemas with Zod
@@ -144,13 +146,166 @@ app.post("/notifications", authenticateToken, async (req, res) => {
     { $push: { notifications: notification._id } }
   );
 
-  res.status(201).json({ message: "Notification sent to multiple users" });
+  res.status(201).json({ message: "Notification sent sers" });
 }); // Actualización para múltiples destinatarios
+
+// Endpoint para filtrar notificaciones por fecha
+app.get("/notifications/filter", authenticateToken, async (req, res) => {
+  const { range } = req.query;
+
+  let startDate;
+  const endDate = new Date();
+
+  switch (range) {
+    case "today":
+      startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "this_week":
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - startDate.getDay());
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "last_month":
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 1);
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    default:
+      return res.status(400).json({ message: "Invalid range parameter" });
+  }
+
+  try {
+    const notifications = await Notification.find({
+      recipients: req.user.userId,
+      createdAt: { $gte: startDate, $lte: endDate },
+    });
+
+    res.json({ length: notifications.length, notifications });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error fetching notifications", error: err.message });
+  }
+});
+
+// Endpoint para filtrar notificaciones por fecha
+app.get("/notifications/filter", authenticateToken, async (req, res) => {
+  const { range } = req.query;
+
+  let startDate;
+  const endDate = new Date();
+
+  switch (range) {
+    case "today":
+      startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "this_week":
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - startDate.getDay());
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case "last_month":
+      startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 1);
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    default:
+      return res.status(400).json({ message: "Invalid range parameter" });
+  }
+
+  try {
+    const notifications = await Notification.find({
+      recipients: req.user.userId,
+      createdAt: { $gte: startDate, $lte: endDate },
+    });
+
+    res.json({ length: notifications.length, notifications });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error fetching notifications", error: err.message });
+  }
+});
 
 // Endpoint to view user's own notifications
 app.get("/my-notifications", authenticateToken, async (req, res) => {
   const user = await User.findById(req.user.userId).populate("notifications");
-  res.json(user.notifications);
+  res.status(200).json({
+    length: user.notifications.length,
+    notifications: user.notifications,
+  });
+});
+
+// Endpoint para marcar una o varias notificaciones como leídas
+app.put("/notifications/read", authenticateToken, async (req, res) => {
+  const { notificationIds } = req.body; // Array de IDs de notificaciones
+
+  if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
+    return res
+      .status(400)
+      .json({ message: "notificationIds must be a non-empty array" });
+  }
+
+  try {
+    const result = await Notification.updateMany(
+      { _id: { $in: notificationIds }, recipients: req.user.userId },
+      { isRead: true }
+    );
+
+    res.json({
+      message: "Notifications marked as read",
+      modifiedCount: result.modifiedCount, // Muestra el número de documentos actualizados
+    });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error updating notifications", error: err.message });
+  }
+});
+
+// Endpoint para marcar todas las notificaciones como leídas
+app.put("/my-notifications/read-all", authenticateToken, async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipients: req.user.userId, isRead: false },
+      { isRead: true }
+    );
+
+    res.json({ message: "All notifications marked as read" });
+  } catch (err) {
+    res.status(500).json({
+      message: "Error marking notifications as read",
+      error: err.message,
+    });
+  }
+});
+
+// Endpoint para eliminar una notificación
+app.delete("/notifications/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const notification = await Notification.findById(id);
+    if (!notification)
+      return res.status(404).json({ message: "Notification not found" });
+
+    // Remover la notificación de los destinatarios
+    await User.updateMany(
+      { notifications: id },
+      { $pull: { notifications: id } }
+    );
+    await notification.deleteOne();
+
+    res.json({ message: "Notification deleted" });
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error deleting notification", error: err.message });
+  }
 });
 
 // Endpoint for admin to grant admin privileges to other users
