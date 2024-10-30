@@ -1,5 +1,5 @@
 import express from "express";
-import { PORT, JWT_SECRET, MONGO_URL } from "./config.js";
+import "dotenv/config";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -17,10 +17,10 @@ app.use(cookieParser());
 // MongoDB connection and server initialization
 (async function initializeServer() {
   try {
-    await mongoose.connect(MONGO_URL);
+    await mongoose.connect(process.env.MONGO_URL);
     console.log("Connected to MongoDB");
-    app.listen(PORT, () =>
-      console.log(`Server running at http://localhost:${PORT}`)
+    app.listen(process.env.PORT, () =>
+      console.log(`Server running at http://localhost:${process.env.PORT}`)
     );
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
@@ -99,7 +99,7 @@ app.post("/login", validate(loginSchema), async (req, res) => {
     }
     const token = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
     res
@@ -122,7 +122,7 @@ app.post("/login", validate(loginSchema), async (req, res) => {
 const authenticateToken = (req, res, next) => {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ message: "Token required" });
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ message: "Invalid token" });
     req.user = user;
     next();
